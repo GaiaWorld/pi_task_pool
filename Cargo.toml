@@ -1,0 +1,16 @@
+[package]
+name = "pi_task_pool"
+version = "0.1.0"
+authors = ["suncy <suncy@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+pi_wtree = {path="../pi_wtree"}
+pi_timer = {path="../pi_timer"}
+pi_dyn_uint = {path="../pi_dyn_uint"}
+pi_deque = {path="../pi_deque"}
+pi_slab = {path="../pi_slab"}
+pi_time = {path="../pi_time"}
+rand = "0.5.4"
+flame = "0.2.2"
+flamer = "0.3"
