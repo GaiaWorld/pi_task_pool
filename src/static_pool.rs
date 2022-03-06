@@ -5,10 +5,10 @@ use std::collections::VecDeque;
 use std::marker::Send;
 use std::fmt;
 
-use wtree::wtree::WeightTree;
-use wtree::fast_wtree;
+use pi_wtree::wtree::WeightTree;
+use pi_wtree::fast_wtree;
 
-use dyn_uint::{SlabFactory, UintFactory, ClassFactory};
+use pi_dyn_uint::{SlabFactory, UintFactory, ClassFactory};
 
 use crate::enums:: {IndexType, FreeSign};
 

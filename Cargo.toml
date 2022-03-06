@@ -2,15 +2,19 @@
 name = "pi_task_pool"
 version = "0.1.0"
 authors = ["suncy <suncy@gmail.com>"]
-edition = "2018"
+edition = "2021"
+description = "任务池"
+repository = "https://github.com/GaiaWorld/pi_task_pool"
+license = "MIT OR Apache-2.0"
+keywords = ["pi",  "task-pool"]
 
 [dependencies]
-pi_wtree = {path="../pi_wtree"}
-pi_timer = {path="../pi_timer"}
-pi_dyn_uint = {path="../pi_dyn_uint"}
-pi_deque = {path="../pi_deque"}
-pi_slab = {path="../pi_slab"}
-pi_time = {path="../pi_time"}
-rand = "0.5.4"
-flame = "0.2.2"
+pi_wtree = "0.1"
+pi_timer = "0.1"
+pi_dyn_uint = "0.1"
+pi_deque = "0.1"
+pi_slab = "0.1"
+pi_time = "0.1"
+rand = "0.5"
+flame = "0.2"
 flamer = "0.3"

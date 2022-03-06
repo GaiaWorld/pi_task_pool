@@ -4,10 +4,10 @@
 use std::marker::Send;
 use std::fmt;
 
-use wtree::wtree::WeightTree;
+use pi_wtree::wtree::WeightTree;
 
-use dyn_uint::{UintFactory, ClassFactory, SlabFactory};
-use deque::slab_deque::SlabDeque;
+use pi_dyn_uint::{UintFactory, ClassFactory, SlabFactory};
+use pi_deque::slab_deque::SlabDeque;
 
 use crate::enums:: {IndexType, FreeSign};
 

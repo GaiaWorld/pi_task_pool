@@ -12,20 +12,6 @@
 //! 除此以外，任务池还可以插入一个延时的任务，该任务先被缓存在定时器中，超时后，才能有机会被弹出
 //!
 
-#![feature(proc_macro_hygiene)]
-extern crate rand;
-
-extern crate flame;
-#[allow(unused_imports)]
-#[macro_use]
-extern crate flamer;
-
-extern crate wtree;
-extern crate timer;
-extern crate dyn_uint;
-extern crate deque;
-extern crate slab;
-
 pub mod enums;
 mod static_pool;
 mod dyn_pool  ;
@@ -37,12 +23,13 @@ use std::marker::Send;
 use std::fmt;
 use std::ptr::NonNull;
 
+use pi_time::run_millis;
 use rand::prelude::*;
 use rand::{Rng};
 use rand::rngs::SmallRng;
 
-use timer::{Timer, Runer};
-use dyn_uint::{SlabFactory, UintFactory, ClassFactory};
+use pi_timer::{Timer};
+use pi_dyn_uint::{SlabFactory, UintFactory, ClassFactory};
 
 use enums:: {QueueType, IndexType, Direction, Task, FreeSign};
 
@@ -234,7 +221,7 @@ impl<T: Debug + 'static> TaskPool<T> {
     pub fn push_dyn_async(&self, task: T, priority: usize) -> isize {
         let (index, len) = {
             let mut lock = self.async_pool.1.lock().unwrap();
-            let (pool, indexs): &mut (wtree::wtree::WeightTree<T>, SlabFactory<IndexType, ()>) = &mut *lock;
+            let (pool, indexs): &mut (pi_wtree::wtree::WeightTree<T>, SlabFactory<IndexType, ()>) = &mut *lock;
             let index = indexs.create(0, IndexType::Async, ());
             pool.push(task, priority, index, indexs);
             self.async_pool.0.store(pool.amount(), AOrd::Relaxed);
@@ -840,10 +827,6 @@ fn is_async(id: isize) -> bool{
     id > 0
 }
 
-#[cfg(test)]
-extern crate time;
-#[cfg(test)]
-use time::run_millis;
 // #[cfg(test)]
 // use std::thread;
 // #[cfg(test)]
