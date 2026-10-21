@@ -1,77 +1,45 @@
-use pi_task_pool::{SerialQueueIndex, TaskExecutor, TaskHandle, TaskPool, TaskWeight};
-use std::sync::{Arc, Barrier};
-use std::thread;
+// @api:src/lib.rs
+// @impl:src/task_pool_inner.rs
+// @test:tests/queue_len_regression.rs
+// @design-doc:design/lock-free-task-pool/07-design/call-chain.md
+#[path = "support/queue_len_regression_inner.rs"]
+mod queue_len_regression_inner;
 
-struct Queued;
-impl TaskExecutor<usize> for Queued {
-    fn fast_path_threshold(&self) -> usize { 0 }
-    fn is_idle(&self) -> bool { false }
-    fn try_execute(&self, task: TaskHandle<usize, Self>) -> Result<(), TaskHandle<usize, Self>> {
-        Err(task)
-    }
-}
-
+/// 契约：src/lib.rs TaskPool::push_parallel/pop；needs.md 概率优先级、并发一致性
+/// @api:src/lib.rs
+/// @impl:src/task_pool_inner.rs
+/// @critical
+/// Scenario: parallel_saturation_drains_after_len_based_repair
+/// Given 五档分别在独立池提交编号0到9999共10000个任务，均超过该档提示上限
+/// When 依次以random 0到9999获取任务
+/// Then 各池按序取得0到9999且随后返回None
 #[test]
 fn parallel_saturation_drains_after_len_based_repair() {
-    for weight in [TaskWeight::Lowest, TaskWeight::Low, TaskWeight::Middle, TaskWeight::High, TaskWeight::Highest] {
-        let pool = TaskPool::new(Queued);
-        for value in 0..10_000 { pool.push_parallel(value, weight); }
-        for expected in 0..10_000 {
-            let task = pool.pop(expected as u64).expect("published task must remain visible");
-            assert_eq!(*task, expected);
-        }
-        assert!(pool.pop(0).is_none());
-    }
+    queue_len_regression_inner::parallel_saturation_drains_after_len_based_repair();
 }
 
+/// 契约：src/lib.rs TaskPool::push_serial/pop、TaskHandle::drop；needs.md 同组串行
+/// @api:src/lib.rs
+/// @impl:src/task_pool_inner.rs
+/// @edgecase
+/// Scenario: serial_len_encoding_crosses_all_boundaries
+/// Given 组20按序提交编号0到79共80个任务
+/// When 反复以u64::MAX获取，每次持有句柄时再以0获取，然后释放句柄
+/// Then 依次取得0到79，持有句柄时同组不可获取，排空后返回None
 #[test]
 fn serial_len_encoding_crosses_all_boundaries() {
-    let pool = TaskPool::new(Queued);
-    let index = SerialQueueIndex::new(20).unwrap();
-    for value in 0..80 { pool.push_serial(value, index); }
-    for expected in 0..80 {
-        let task = pool.pop(u64::MAX).expect("serial task must remain visible");
-        assert_eq!(*task, expected);
-        assert!(pool.pop(0).is_none(), "held serial queue must remain occupied");
-        drop(task);
-    }
-    assert!(pool.pop(0).is_none());
+    queue_len_regression_inner::serial_len_encoding_crosses_all_boundaries();
 }
 
+/// 契约：src/lib.rs TaskPool::push_parallel/pop；needs.md 并发一致性及恢复进展前提
+/// @api:src/lib.rs
+/// @impl:src/task_pool_inner.rs
+/// @critical
+/// Scenario: concurrent_publications_and_consumers_leave_no_hidden_tasks
+/// Given 最高档预填编号0到8999，两个生产者各准备3000个不重复任务
+/// When 两生产者与两消费者同时起跑，各消费者尝试获取12000次，全部汇合后排空
+/// Then 合计取得编号0到14999各一次；仅要求所有已开始发布与修复完成后的最终结果
 #[test]
 fn concurrent_publications_and_consumers_leave_no_hidden_tasks() {
-    let pool = TaskPool::new(Queued);
-    // Start above saturation so concurrent consumption exercises recovery.
-    for value in 0..9_000 { pool.push_parallel(value, TaskWeight::Highest); }
-    let start = Arc::new(Barrier::new(5));
-    let mut producers = Vec::new();
-    let mut consumers = Vec::new();
-    for producer in 0..2 {
-        let start = Arc::clone(&start);
-        producers.push(thread::spawn(move || {
-            start.wait();
-            for offset in 0..3_000 {
-                pool.push_parallel(9_000 + producer * 3_000 + offset, TaskWeight::Highest);
-            }
-        }));
-    }
-    for consumer in 0..2 {
-        let start = Arc::clone(&start);
-        consumers.push(thread::spawn(move || {
-            let mut values = Vec::new();
-            start.wait();
-            for random in 0..12_000 {
-                if let Some(task) = pool.pop(random + consumer) { values.push(*task); }
-            }
-            values
-        }));
-    }
-    start.wait();
-    for producer in producers { producer.join().unwrap(); }
-    let mut values = Vec::new();
-    // Join all consumers before final draining: every repair must finish first.
-    for consumer in consumers { values.extend(consumer.join().unwrap()); }
-    while let Some(task) = pool.pop(0) { values.push(*task); }
-    values.sort_unstable();
-    assert_eq!(values, (0..15_000).collect::<Vec<_>>());
+    queue_len_regression_inner::concurrent_publications_and_consumers_leave_no_hidden_tasks();
 }

@@ -3,7 +3,7 @@
 //! 普通调度路径已实现，快速交接尚待完成。
 
 use std::ops::{Deref, DerefMut};
-use crate::sync::{Arc, AtomicU64};
+use crate::sync::AtomicU64;
 
 #[cfg(not(loom))]
 #[allow(unused_imports)]
@@ -74,11 +74,7 @@ pub trait TaskExecutor<T>: Sized {
 /// @public 静态任务池；通过共享静态引用跨线程使用，无需克隆池对象。
 /// 构造返回静态引用，所有提交和获取操作要求静态接收者。
 /// 无关闭、清空、取消、超时功能；同队列push调用必须不重叠。
-pub struct TaskPool<T, TE: TaskExecutor<T>> {
-    inner: Arc<TaskPoolInner<T, TE>>,
-}
-
-/// @internal 存储、独占交接及调度提示的状态边界。
+/// 直接持有队列、状态和执行器，不使用引用计数间接层。
 /// serial_states:队列i的3*i位used，随后两位min(ceil(n/16),3)，bit63=0。
 /// parallel_states:低到高最低/低/中/高各13位，最高12位，字段上限代表饱和。
 /// 队列数量直接采样SegQueue::len()，不再维护独立计数。
@@ -89,8 +85,8 @@ pub struct TaskPool<T, TE: TaskExecutor<T>> {
 /// used是严格独占，完成Release清位。
 /// 队列自行发布任务；状态Acquire读取，发布/认领CAS AcqRel、失败Acquire。
 /// len内部读取SeqCst索引且可能重试；pop可能等待已预留槽位写入完成，不承诺wait-free。
-/// 永久强引用保证句柄裸指针存活；无池回收。允许竞争重试，不保证wait-free。
-pub(crate) struct TaskPoolInner<T, TE: TaskExecutor<T>> {
+/// 静态池保证句柄裸指针存活；无池回收。允许竞争重试，不保证wait-free。
+pub struct TaskPool<T, TE: TaskExecutor<T>> {
     serial_states: CachePadded<AtomicU64>,
     parallel_states: CachePadded<AtomicU64>,
     serial: [SegQueue<T>; 21],
@@ -100,12 +96,12 @@ pub(crate) struct TaskPoolInner<T, TE: TaskExecutor<T>> {
 
 /// @public 唯一任务与串行占用的所有权凭据，不可克隆。
 /// serial_index为Some(0..21)时持有相应used位；None代表并发任务。
-/// pool_ptr指向永久存活内部池；不得解锁其他队列或二次转移任务。
+/// pool_ptr指向永久存活的TaskPool；不得解锁其他队列或二次转移任务。
 /// Drop仅解除串行占用，字段T随后正常析构；执行器须持有到实际任务完成。
-/// Send条件为T:Send、TE:Send+Sync；Sync另要求T:Sync，空芯阶段尚不实现unsafe标记。
+/// Send条件为T:Send、TE:Send+Sync；Sync另要求T:Sync，标记及安全依据位于内部实现模块。
 pub struct TaskHandle<T, TE: TaskExecutor<T>> {
     task: T,
-    pool_ptr: *const TaskPoolInner<T, TE>,
+    pool_ptr: *const TaskPool<T, TE>,
     serial_index: Option<usize>,
 }
 
@@ -124,14 +120,14 @@ impl<T, TE: TaskExecutor<T>> TaskPool<T, TE> {
     /// 空队列可认领后快速交接；拒绝由内部守卫保持占用，入队发布后清占用，不插队。
     /// 拒绝回退由守卫承接释放责任；已发布任务必须完成提示发布后再清占用。
     pub fn push_serial(&'static self, task: T, queue_index: SerialQueueIndex) {
-        inner::push_serial_inner(&self.inner, task, queue_index.get())
+        inner::push_serial_inner(self, task, queue_index.get())
     }
 
     /// @public 提交指定档位任务；不限制同档任务同时执行。
     /// 返回时入队或已接受；拒绝原任务回退入队，不丢失、不重复，非幂等。
     /// 不另设独立计数容量限制；不管理工作线程，分配失败沿用分配器行为。
     pub fn push_parallel(&'static self, task: T, weight: TaskWeight) {
-        inner::push_parallel_inner(&self.inner, task, weight)
+        inner::push_parallel_inner(self, task, weight)
     }
 
     /// @public 概率获取；Some转移唯一任务，串行used保持至句柄释放。
@@ -140,7 +136,7 @@ impl<T, TE: TaskExecutor<T>> TaskPool<T, TE> {
     /// random接受整个u64范围，由调用方提供；按当前总权重取模选择。
     /// 重试复用同一random；允许取模偏差，同快照同输入选择一致。
     pub fn pop(&'static self, random: u64) -> Option<TaskHandle<T, TE>> {
-        inner::pop_inner(&self.inner, random)
+        inner::pop_inner(self, random)
     }
 }
 

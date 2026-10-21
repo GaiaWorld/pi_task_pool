@@ -499,13 +499,64 @@ pub fn saturated_fields_drain_under_fixed_tickets() {
     }
 }
 
-// 剩余边界与所需验证路径：
-// pop(random) 只决定选择落点，无法在「读取状态」与「CAS」之间插入暂停，也无法
-// 制造「计数已预留但尚未发布」的空队列，因此以下交错仍缺确定性证据：
-// 饱和同值发布覆盖非零旧目标、下调后补报、计数预留暂停、取空修复、串行跨档修复。
-// 可行的确定性路径需改动 src/task_pool_inner.rs（本阶段无写权限）：
-//   1) 把 publish/lower/repair 的 CAS 循环拆成「快照 → 下一步」纯函数，由 crate
-//      内单元测试逐条喂入快照，重现「旧快照 CAS 失败后必须全量重读」；
-//   2) 或在下调 CAS 成功后、计数预留与队列发布之间加入 #[cfg(test)] 暂停点，
-//      用线程脚本按固定顺序放行竞争者。
-// 两种方案都需设计批准；在本文件内用并发压力或握手替代均不被视为证明。
+pub fn serial_count_band_boundaries_change_public_ticket_intervals() {
+    for (count, initial_band, remaining_band) in [
+        (16, 1u64, 1u64),
+        (17, 2, 1),
+        (32, 2, 2),
+        (33, 3, 2),
+        (48, 3, 3),
+        (49, 3, 3),
+    ] {
+        let pool = TaskPool::new(QueuedOnly);
+        let index = SerialQueueIndex::new(0).unwrap();
+        for sequence in 0..count {
+            pool.push_serial(serial_task(0, sequence), index);
+        }
+        pool.push_parallel(parallel_task(0, 0), TaskWeight::Lowest);
+        let initial_total = initial_band * 100 + 1;
+        for ticket in 0..initial_total {
+            let expected = if ticket < initial_band * 100 {
+                Candidate::Serial(0)
+            } else {
+                Candidate::Parallel(0)
+            };
+            assert_eq!(take(pool, ticket), expected, "count {count}, ticket {ticket}");
+        }
+        let held = pool.pop(0).expect("serial head");
+        assert_eq!(candidate(*held), Candidate::Serial(0));
+        let held_sequence = held.2;
+        // 同一输入在占用后按新总权重取模，只能选最低档。
+        assert_eq!(take(pool, 0), Candidate::Parallel(0));
+        assert_eq!(take(pool, initial_total), Candidate::Parallel(0));
+        drop(held);
+        let remaining_total = remaining_band * 100 + 1;
+        for ticket in 0..remaining_total {
+            let expected = if ticket < remaining_band * 100 {
+                Candidate::Serial(0)
+            } else {
+                Candidate::Parallel(0)
+            };
+            assert_eq!(take(pool, ticket), expected, "remaining {count}, ticket {ticket}");
+        }
+        let mut serial_sequences = vec![held_sequence];
+        for _ in 1..count {
+            let task = pool.pop(0).expect("serial task remains visible");
+            assert_eq!(candidate(*task), Candidate::Serial(0));
+            serial_sequences.push(task.2);
+            drop(task);
+        }
+        serial_sequences.sort_unstable();
+        assert_eq!(serial_sequences, (0..count).collect::<Vec<_>>());
+        let last = pool.pop(0).expect("parallel task remains visible");
+        assert_eq!(*last, parallel_task(0, 0));
+        drop(last);
+        assert!(pool.pop(0).is_none());
+    }
+}
+
+// 验证分层：本文件验证公开API选择区间和并发结果。
+// src/recovery_tests_inner.rs通过仅测试启用的私有检查点复用生产恢复循环，
+// 对饱和旧快照覆盖、下调后发布、串行跨档及取空修复断言目标窗口命中。
+// 三个Loom模型提供有界补充探索，不跟踪Crossbeam内部，不是穷尽证明。
+// 独立计数预留已删除，不再列为当前恢复协议验收目标。

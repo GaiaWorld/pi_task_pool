@@ -97,3 +97,18 @@ fn fixed_ticket_selection_repeats_after_total_weight() {
 fn saturated_fields_drain_under_fixed_tickets() {
     scheduling_pool_test_inner::saturated_fields_drain_under_fixed_tickets();
 }
+
+/// 契约：src/lib.rs:78-85,133-140；src/task_pool_inner.rs:223-227,445-481；design/lock-free-task-pool/01-requirements/needs.md:6,8
+/// @api:src/lib.rs
+/// @impl:src/task_pool_inner.rs
+/// @kind: contract
+/// @edgecase
+/// Scenario: serial_count_band_boundaries_change_public_ticket_intervals
+/// Given 组0分别有16、17、32、33、48、49个任务，最低档各有1个任务
+/// When 在每个独立池枚举固定落点，持有一个串行句柄，再释放并排空
+/// Then 串行区间依次长100、200、200、300、300、300；占用时仅最低档可选，
+///      释放后按剩余数量重新编码，每个任务恰好取出一次且最终为空
+#[test]
+fn serial_count_band_boundaries_change_public_ticket_intervals() {
+    scheduling_pool_test_inner::serial_count_band_boundaries_change_public_ticket_intervals();
+}

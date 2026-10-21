@@ -17,15 +17,14 @@ impl<T> TaskExecutor<T> for QueuedOnly {
     }
 }
 
-// Execution status: all three models currently stop at Loom's "Arc leaked"
-// check because new_inner intentionally forgets one strong reference. They must
-// not be treated as completed schedule exploration or recovery-counterexamples.
-// The production Loom lifecycle needs a scoped owner for that permanent reference
-// until every worker and handle has finished; do not suppress leak checks here.
+// Execution status: after removing the internal Arc, all three bounded models pass.
+// The static pool still intentionally retains memory; no unsafe reclamation or
+// suppressed leak checks are used. This is not a full resource-lifecycle proof.
+// Independent counts were removed; recovery samples queue.len().
 // Bounded exploration, not an exhaustive proof. SegQueue remains Crossbeam:
-// Loom controls the production hint/count atomics, not queue-internal operations.
-// No target-interleaving hit counters exist: passing cannot certify a specific
-// stale-snapshot window or an empty-pop repair branch was reached.
+// Loom controls the production hint atomics, not queue-internal operations.
+// These models alone do not certify a target stale-snapshot window. Deterministic
+// production-loop checkpoints and hit assertions live in src/recovery_tests_inner.rs.
 fn explore(permutations: usize, scenario: impl Fn() + Send + Sync + 'static) {
     let mut model = loom::model::Builder::new();
     model.preemption_bound = Some(2);

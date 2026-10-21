@@ -33,3 +33,4 @@
 | 2026-10-21 | L7 | 用户批准pop(&self, random:u64)，random按当前总权重取模，重试复用，取消内部随机源及严格无偏承诺；保留已实现逻辑，接口迁移与确定性交错验证继续设计。 | 旧L9归档，公开pop与内部pop签名解冻，测试调用迁移待实现阶段 |
 | 2026-10-21 | L7 | 已落pop(random:u64)及内部参数转接，以random%total替代内部随机调用；cargo check通过。 | 既有测试无参调用迁移、旧随机源清理、调用链同步及第二类交错验证接缝待继续；本轮未运行测试 |
 | 2026-10-21 | L7 | 用户批准SerialQueueIndex(u8)私有字段、const校验new/get及push_serial强类型参数，已落src/lib.rs并通过cargo check。 | 公开usize调用为破坏性接口迁移，既有测试和实现验收需同步；L7仍待调用链和验证接缝收束复审 |
+| 2026-10-21 | L7 | 按用户授权同步当前静态池、SerialQueueIndex、pop(random)、serial_states/parallel_states和len采样方案；更新需求流程、模块决定/变更点、调用图/源表/切片、词汇与索引；删除无调用方TLS随机源并清理已实现函数占位标签。 | 保留前两切片完成标记与既有Arc结构，cargo test 38通过；Loom生命周期和目标交错证据仍阻塞，不声明新设计放行 |
