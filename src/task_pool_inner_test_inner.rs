@@ -216,7 +216,7 @@ pub(super) fn rejected_serial_unwind_before_publication_releases_once() {
     let original = TaskHandle {
         task: TrackedRejectedTask { value: 11, drops: std::sync::Arc::clone(&drops) },
         pool_ptr: pool,
-        serial_index: Some(0),
+        serial_index: Some(index),
     };
     let rejected = pool.executor.try_execute(original).err().expect("executor rejects original handle");
     let outcome = catch_unwind(AssertUnwindSafe(|| {

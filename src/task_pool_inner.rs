@@ -1,7 +1,7 @@
 //! 并发与串行队列闭环实现；快速交接、拒绝回退及释放。
 // 设计：lock-free-task-pool
 #![allow(dead_code, unused_variables)]
-use crate::{TaskExecutor, TaskHandle, TaskPool, TaskWeight};
+use crate::{SerialQueueIndex, TaskExecutor, TaskHandle, TaskPool, TaskWeight};
 use crossbeam_queue::SegQueue;
 use crossbeam_utils::CachePadded;
 use std::mem::ManuallyDrop;
@@ -41,7 +41,7 @@ fn parallel_field(queue_index: usize) -> (u32, u64) {
 /// @internal 唯一串行释放责任；持有到回退发布完成，展开也清used。
 pub(super) struct SerialReleaseGuard<T, TE: TaskExecutor<T>> {
     pool_ptr: *const TaskPool<T, TE>,
-    queue_index: usize,
+    queue_index: SerialQueueIndex,
 }
 impl<T, TE: TaskExecutor<T>> Drop for SerialReleaseGuard<T, TE> {
     fn drop(&mut self) {
@@ -55,7 +55,7 @@ pub(super) fn drop_serial_guard_inner<T, TE: TaskExecutor<T>>(
 ) {
     // SAFETY: 守卫仅从原串行句柄转移释放责任，池由静态引用创建并永久存活。
     let pool = unsafe { &*guard.pool_ptr };
-    release_serial_inner(pool, guard.queue_index);
+    release_serial_inner(pool, guard.queue_index.get());
 }
 
 /// @internal
@@ -81,7 +81,8 @@ pub(super) fn push_serial_inner<T, TE: TaskExecutor<T>>(
     task: T,
     queue_index: usize,
 ) {
-    assert!(queue_index < 21, "serial queue index must be in 0..21");
+    let serial_index = SerialQueueIndex::new(queue_index)
+        .expect("serial queue index must be in 0..21");
     let serial_state = pool.serial_states.load(Ordering::Acquire);
     let parallel_states = pool.parallel_states.load(Ordering::Acquire);
     if estimate_waiting_inner(serial_state, parallel_states) < pool.executor.fast_path_threshold()
@@ -91,9 +92,10 @@ pub(super) fn push_serial_inner<T, TE: TaskExecutor<T>>(
         let handle = TaskHandle {
             task,
             pool_ptr: pool,
-            serial_index: Some(queue_index),
+            serial_index: Some(serial_index),
         };
         match pool.executor.try_execute(handle) {
+            // 串行快速接受不入队、不发布数量提示，used由句柄完成释放。
             Ok(()) => return,
             Err(handle) => {
                 // 守卫一直持有used，直到队列和提示均发布完毕；预发布展开也会释放。
@@ -133,6 +135,7 @@ pub(super) fn push_parallel_inner<T, TE: TaskExecutor<T>>(
             serial_index: None,
         };
         match pool.executor.try_execute(handle) {
+            // 并发快速接受不入队，也不修改serial_states或parallel_states。
             Ok(()) => return,
             Err(handle) => {
                 let (task, _guard) = into_task_inner(handle);
@@ -169,6 +172,9 @@ pub(super) fn pop_inner<T, TE: TaskExecutor<T>>(
         );
         let queue_index = match selection {
             Some(QueueSelection::Serial(index)) => {
+                // 在认领前校验，确保句柄和释放守卫始终携带合法的串行索引。
+                let serial_index = SerialQueueIndex::new(index)
+                    .expect("selected serial queue index must be in 0..21");
                 if !try_claim_serial_inner(pool, index, false) {
                     // 占用或提示已变，重新读取整个调度快照。
                     continue;
@@ -180,7 +186,7 @@ pub(super) fn pop_inner<T, TE: TaskExecutor<T>>(
                     return Some(TaskHandle {
                         task,
                         pool_ptr: pool,
-                        serial_index: Some(index),
+                        serial_index: Some(serial_index),
                     });
                 }
                 // 提示可能多报；取空校正后本轮不再尝试该组。
@@ -249,7 +255,7 @@ pub(super) fn drop_handle_inner<T, TE: TaskExecutor<T>>(handle: &mut TaskHandle<
         // SAFETY: 句柄只由池构造，pool_ptr指向永久存活的静态池。
         // 句柄不可克隆，独占该组used；这里只借用共享池并清原子位，不移动任务。
         let pool = unsafe { &*handle.pool_ptr };
-        release_serial_inner(pool, index);
+        release_serial_inner(pool, index.get());
     }
     // 并发没有占用位；返回后由Rust正常析构task，不解引用pool_ptr。
 }
