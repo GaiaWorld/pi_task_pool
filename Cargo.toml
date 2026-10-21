@@ -1,6 +1,6 @@
 [package]
 name = "pi_task_pool"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["suncy <suncy@gmail.com>"]
 edition = "2021"
 description = "任务池"
@@ -9,12 +9,11 @@ license = "MIT OR Apache-2.0"
 keywords = ["pi",  "task-pool"]
 
 [dependencies]
-pi_wtree = "0.1"
-pi_timer = "0.1"
-pi_dyn_uint = "0.1"
-pi_deque = "0.1"
-pi_slab = "0.1"
-pi_time = "0.1"
-rand = "0.5"
-flame = "0.2"
-flamer = "0.3"
+crossbeam-queue = "0.3"
+crossbeam-utils = "0.8"
+
+[target.'cfg(loom)'.dependencies]
+loom = "0.7"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
