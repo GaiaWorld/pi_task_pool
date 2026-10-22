@@ -34,3 +34,4 @@
 | 2026-10-21 | L7 | 已落pop(random:u64)及内部参数转接，以random%total替代内部随机调用；cargo check通过。 | 既有测试无参调用迁移、旧随机源清理、调用链同步及第二类交错验证接缝待继续；本轮未运行测试 |
 | 2026-10-21 | L7 | 用户批准SerialQueueIndex(u8)私有字段、const校验new/get及push_serial强类型参数，已落src/lib.rs并通过cargo check。 | 公开usize调用为破坏性接口迁移，既有测试和实现验收需同步；L7仍待调用链和验证接缝收束复审 |
 | 2026-10-21 | L7 | 按用户授权同步当前静态池、SerialQueueIndex、pop(random)、serial_states/parallel_states和len采样方案；更新需求流程、模块决定/变更点、调用图/源表/切片、词汇与索引；删除无调用方TLS随机源并清理已实现函数占位标签。 | 保留前两切片完成标记与既有Arc结构，cargo test 38通过；Loom生命周期和目标交错证据仍阻塞，不声明新设计放行 |
+| 2026-10-21 | L7 | 用户确认定点L7返工：原冻结入口未预留分队列统计能力，现解冻src/lib.rs模块注册与结果类型重导出位置，以接入queue-length-estimates设计。 | 已有API、类型与逻辑不变；既有四个完成切片保留；新增入口接入与新查询声明需编译核验及L9审查 |

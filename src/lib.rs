@@ -55,6 +55,10 @@ use crossbeam_utils::CachePadded;
 #[path = "task_pool_inner.rs"]
 mod inner;
 
+mod queue_length_estimates;
+mod queue_length_estimates_inner;
+pub use queue_length_estimates::QueueLengthEstimates;
+
 /// @public 概率调度的档位权重，不表示严格执行顺序。
 /// 仅影响排队后的选择；并发档位的有效权重是数量提示乘以本档权重。
 /// 快速交接不比较档位，低权重任务也可能先于已排队的高权重任务执行。
